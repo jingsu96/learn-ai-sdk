@@ -13,9 +13,8 @@
     "rootDir": "src",
     "declaration": true,
     "sourceMap": true,
-    "noEmit": false,
-    "incremental": true
+    "noEmit": false
   },
-  "include": ["src/**/*", "**/*.js"],
+  "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
 }

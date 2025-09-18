@@ -27,6 +27,7 @@
     "typescript": "^5.9.2"
   },
   "dependencies": {
+    "@ai-sdk/deepseek": "^1.0.18",
     "@ai-sdk/google": "^2.0.14",
     "@t3-oss/env-core": "^0.13.8",
     "ai": "^5.0.46",

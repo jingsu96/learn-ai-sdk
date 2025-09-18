@@ -1,41 +1,119 @@
 import * as dotenvSafe from "dotenv-safe";
 import { google } from "@ai-sdk/google";
-import { deepseek } from "@ai-sdk/deepseek";
-import { generateText, streamText, type LanguageModel } from "ai";
+import { streamText, type ModelMessage } from "ai";
+import * as readline from "readline";
 
 dotenvSafe.config();
 
 const gemini = google("gemini-2.0-flash-001");
-const deepseekMode = deepseek.chat("deepseek-chat");
 
-const jsExpert = async ({
-  prompt,
-  model,
-}: {
-  prompt: string;
-  model: LanguageModel;
-}) => {
-  const { textStream } = streamText({
-    model,
-    prompt,
-    // Sometimes the AI has to follow a specific behavior, no matter the prompt it receives. -- use system, it can be use both generateText and streamText
-    system:
-      "You are a JavaScript expert. Please answer the user's question concisely.",
-  });
+class Chat {
+  private rl: readline.Interface;
+  private messages: ModelMessage[] = [
+    /** System prompt can also be put it as the first chat in the history */
+    {
+      role: "system",
+      content:
+        "You are a helpful assistant. Please answer the user's questions concisely and helpfully.",
+    },
+  ];
 
-  for await (let text of textStream) {
-    process.stdout.write(text);
+  constructor() {
+    this.rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
   }
-};
 
-console.log(`\n===== GEMINI =====\n`);
+  private async streamResponse(prompt: string): Promise<void> {
+    this.messages.push({ role: "user", content: prompt });
 
-await jsExpert({ prompt: "What's JavaScript?", model: gemini });
+    try {
+      const { textStream } = streamText({
+        model: gemini,
+        messages: this.messages,
+      });
 
-console.log("\n=======================\n");
+      let assistantResponse = "";
+      process.stdout.write(`\nAssistant: `);
 
-console.log(`\n===== DEEPSEEK =====\n`);
+      for await (let text of textStream) {
+        process.stdout.write(text);
+        assistantResponse += text;
+      }
 
-await jsExpert({ prompt: "What's JavaScript?", model: deepseekMode });
+      this.messages.push({ role: "assistant", content: assistantResponse });
+      console.log("\n");
+    } catch (err) {
+      console.error(err);
+    }
+  }
 
-console.log("\n=======================\n");
+  private async handleCommand(input: string): Promise<boolean> {
+    const command = input.slice(1).toLowerCase();
+
+    switch (command) {
+      case "help":
+        console.log(`
+  Commands:
+    /help     - Show this help
+    /history  - Show conversation history
+    /exit     - Exit chat
+
+  Just type your message to chat!
+  `);
+        return false;
+
+      case "history":
+        console.log(JSON.stringify(this.messages, null, 2));
+        return false;
+
+      case "exit":
+        console.log("See ya!");
+        return true;
+
+      default:
+        console.log(
+          `Unknown command: ${command}\nType /help for available commands\n`,
+        );
+        return false;
+    }
+  }
+
+  async start(): Promise<void> {
+    while (true) {
+      try {
+        const input: string = await new Promise((res) =>
+          this.rl.question("You: ", res),
+        );
+
+        if (!input.trim()) continue;
+
+        if (input.startsWith("/")) {
+          const shouldExit = await this.handleCommand(input);
+          if (shouldExit) break;
+          continue;
+        }
+
+        await this.streamResponse(input);
+      } catch (error) {
+        console.error(`Error: ${error}`);
+        break;
+      }
+    }
+
+    this.rl.close();
+  }
+}
+
+async function main() {
+  const chat = new Chat();
+  await chat.start();
+}
+
+process.on("SIGINT", () => {
+  console.log("\nGoodbye!");
+  process.exit(0);
+});
+
+main().catch(console.error);

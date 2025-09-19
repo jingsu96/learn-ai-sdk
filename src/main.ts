@@ -1,6 +1,6 @@
 import * as dotenvSafe from "dotenv-safe";
 import { google } from "@ai-sdk/google";
-import { streamText, generateObject, type ModelMessage } from "ai";
+import { streamText, streamObject, type ModelMessage } from "ai";
 import * as readline from "readline";
 import { schema } from "./schema";
 
@@ -10,6 +10,7 @@ const gemini = google("gemini-2.0-flash-001");
 
 class Chat {
   private rl: readline.Interface;
+
   private messages: ModelMessage[] = [
     /** System prompt can also be put it as the first chat in the history */
     {
@@ -51,12 +52,12 @@ class Chat {
   }
 
   /**
-   * When you want to get back from your LLM is not text but structured output. using generateObject with zod it's a right way to go!
+   * When you want to get back from your LLM is not text but structured output. using generateObject or streamObject with zod it's a right way to go!
    */
-  private async stepsResponse(prompt: string): Promise<void> {
+  private async streamObjectResponse(prompt: string): Promise<void> {
     this.messages.push({ role: "user", content: prompt });
 
-    const { object } = await generateObject({
+    const result = streamObject({
       model: gemini,
       system: `You are an expert coach helping users with step-by-step instructions.
 Create clear, actionable steps that are easy to follow.
@@ -68,13 +69,15 @@ Be comprehensive yet super concise in your guidance.`,
       prompt,
     });
 
-    const formattedObject = JSON.stringify(object, null, 2);
+    for await (let chunk of result.partialObjectStream) {
+      console.clear();
+      console.dir(chunk, { depth: null });
+    }
 
-    process.stdout.write(formattedObject);
-
+    const finalObject = await result.object;
     this.messages.push({
       role: "assistant",
-      content: formattedObject,
+      content: JSON.stringify(finalObject, null, 2),
     });
   }
 
@@ -148,7 +151,7 @@ Be comprehensive yet super concise in your guidance.`,
 
         // Check if user input indicates need for step-by-step instructions
         if (this.needsStepByStep(input)) {
-          await this.stepsResponse(input);
+          await this.streamObjectResponse(input);
         } else {
           await this.streamResponse(input);
         }

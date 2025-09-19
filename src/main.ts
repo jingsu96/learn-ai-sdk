@@ -8,8 +8,8 @@ import {
   type ModelMessage,
 } from "ai";
 import * as readline from "readline";
-import isImage from "is-image";
-import { schema } from "./schema";
+import { isImage, isPDF } from "./utils";
+import { schema, fileSchema } from "./schema";
 
 type OutputFormat = "auto" | "sentiment" | "structured";
 
@@ -106,33 +106,47 @@ Be comprehensive yet super concise in your guidance.`,
     });
   }
 
-  private async describeImage(url: string): Promise<void> {
-    this.messages.push({
-      role: "user",
-      content: [{ type: "image", image: new URL(url) }],
-    });
-
+  private async describeAsset(asset: string): Promise<void> {
     process.stdout.write(`\nAssistant: `);
-    const { text } = await generateText({
-      model: gemini,
-      system: `You will receive an image. Please describe it concisely, ensuring the output length is within 100 words.`,
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "image",
-              image: new URL(url),
-            },
-          ],
-        },
-      ],
-    });
 
-    console.log(text);
+    let result: string;
+
+    if (isPDF(asset)) {
+      this.messages.push({
+        role: "user",
+        content: [
+          {
+            type: "file",
+            data: new URL(asset),
+            mediaType: "application/pdf",
+          },
+        ],
+      });
+      const { object } = await generateObject({
+        model: gemini,
+        system: `You will receive an image. Please describe it concisely, ensuring it meets the schema`,
+        schema: fileSchema,
+        messages: this.messages,
+      });
+
+      result = JSON.stringify(object);
+    } else {
+      this.messages.push({
+        role: "user",
+        content: [{ type: "image", image: new URL(asset) }],
+      });
+      const { text } = await generateText({
+        model: gemini,
+        system: `You will receive an image. Please describe it concisely, ensuring the output length is within 100 words.`,
+        messages: this.messages,
+      });
+
+      result = JSON.stringify(text);
+    }
+    console.log(result);
     this.messages.push({
       role: "assistant",
-      content: text,
+      content: result,
     });
   }
 
@@ -182,8 +196,8 @@ Be comprehensive yet super concise in your guidance.`,
           continue;
         }
 
-        if (isImage(input)) {
-          await this.describeImage(input);
+        if (isImage(input) || isPDF(input)) {
+          await this.describeAsset(input);
           continue;
         }
 

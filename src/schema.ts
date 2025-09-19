@@ -51,3 +51,12 @@ export const schema = z.object({
       .describe("What the user should know or have before starting"),
   }),
 });
+
+export const fileSchema = z.object({
+  fileMeta: z.object({
+    size: z.number(),
+    type: z.string(),
+    totalPage: z.number(),
+  }),
+  fileDescription: z.string(),
+});

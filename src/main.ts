@@ -1,8 +1,15 @@
 import * as dotenvSafe from "dotenv-safe";
 import { google } from "@ai-sdk/google";
-import { streamText, streamObject, type ModelMessage } from "ai";
+import {
+  streamText,
+  streamObject,
+  generateObject,
+  type ModelMessage,
+} from "ai";
 import * as readline from "readline";
 import { schema } from "./schema";
+
+type OutputFormat = "auto" | "sentiment" | "structured";
 
 dotenvSafe.config();
 
@@ -10,6 +17,7 @@ const gemini = google("gemini-2.0-flash-001");
 
 class Chat {
   private rl: readline.Interface;
+  private outputFormat: OutputFormat;
 
   private messages: ModelMessage[] = [
     /** System prompt can also be put it as the first chat in the history */
@@ -20,11 +28,12 @@ class Chat {
     },
   ];
 
-  constructor() {
+  constructor(outputFormat: OutputFormat = "auto") {
     this.rl = readline.createInterface({
       input: process.stdin,
       output: process.stdout,
     });
+    this.outputFormat = outputFormat;
   }
 
   private async streamResponse(prompt: string): Promise<void> {
@@ -69,6 +78,7 @@ Be comprehensive yet super concise in your guidance.`,
       prompt,
     });
 
+    process.stdout.write(`\nAssistant: `);
     for await (let chunk of result.partialObjectStream) {
       console.clear();
       console.dir(chunk, { depth: null });
@@ -81,26 +91,23 @@ Be comprehensive yet super concise in your guidance.`,
     });
   }
 
-  private needsStepByStep(input: string): boolean {
-    const stepKeywords = [
-      "step by step",
-      "how to",
-      "guide me through",
-      "walk me through",
-      "tutorial",
-      "instructions",
-      "step-by-step",
-      "break down",
-      "explain step by step",
-      "show me how",
-      "teach me how",
-      "demonstrate",
-      "procedure",
-      "process",
-    ];
-
-    const lowerInput = input.toLowerCase();
-    return stepKeywords.some((keyword) => lowerInput.includes(keyword));
+  private async classifySentiment(prompt: string): Promise<void> {
+    this.messages.push({ role: "user", content: prompt });
+    process.stdout.write(`\nAssistant: `);
+    const { object } = await generateObject({
+      model: gemini,
+      output: "enum",
+      enum: ["positive", "negative", "neutral"],
+      prompt,
+      system:
+        `Classify the sentiment of the text as either ` +
+        `positive, negative, or neutral.`,
+    });
+    console.log(object);
+    this.messages.push({
+      role: "assistant",
+      content: object,
+    });
   }
 
   private async handleCommand(input: string): Promise<boolean> {
@@ -149,9 +156,10 @@ Be comprehensive yet super concise in your guidance.`,
           continue;
         }
 
-        // Check if user input indicates need for step-by-step instructions
-        if (this.needsStepByStep(input)) {
+        if (this.outputFormat === "structured") {
           await this.streamObjectResponse(input);
+        } else if (this.outputFormat === "sentiment") {
+          await this.classifySentiment(input);
         } else {
           await this.streamResponse(input);
         }
@@ -165,8 +173,21 @@ Be comprehensive yet super concise in your guidance.`,
   }
 }
 
+// pnpm build && pnpm dev --format=sentiment
 async function main() {
-  const chat = new Chat();
+  const args = process.argv.slice(2);
+  let outputFormat: OutputFormat = "auto";
+
+  if (args.includes("--format=sentiment")) {
+    outputFormat = "sentiment";
+  } else if (args.includes("--format=structured")) {
+    outputFormat = "structured";
+  }
+
+  console.log(`🤖 Starting chat with output format: ${outputFormat}`);
+  console.log("Type /help for commands\n");
+
+  const chat = new Chat(outputFormat);
   await chat.start();
 }
 

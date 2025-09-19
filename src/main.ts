@@ -51,7 +51,6 @@ class Chat {
       }
 
       this.messages.push({ role: "assistant", content: assistantResponse });
-      console.log("\n");
     } catch (err) {
       console.error(err);
     }
@@ -112,6 +111,8 @@ Be comprehensive yet super concise in your guidance.`,
       role: "user",
       content: [{ type: "image", image: new URL(url) }],
     });
+
+    process.stdout.write(`\nAssistant: `);
     const { text } = await generateText({
       model: gemini,
       system: `You will receive an image. Please describe it concisely, ensuring the output length is within 100 words.`,

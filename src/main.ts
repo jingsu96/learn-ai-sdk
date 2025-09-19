@@ -1,7 +1,8 @@
 import * as dotenvSafe from "dotenv-safe";
 import { google } from "@ai-sdk/google";
-import { streamText, type ModelMessage } from "ai";
+import { streamText, generateObject, type ModelMessage } from "ai";
 import * as readline from "readline";
+import { schema } from "./schema";
 
 dotenvSafe.config();
 
@@ -47,6 +48,56 @@ class Chat {
     } catch (err) {
       console.error(err);
     }
+  }
+
+  /**
+   * When you want to get back from your LLM is not text but structured output. using generateObject with zod it's a right way to go!
+   */
+  private async stepsResponse(prompt: string): Promise<void> {
+    this.messages.push({ role: "user", content: prompt });
+
+    const { object } = await generateObject({
+      model: gemini,
+      system: `You are an expert coach helping users with step-by-step instructions.
+Create clear, actionable steps that are easy to follow.
+For each step, provide a specific action and consider potential challenges.
+Include checkpoints to help users track their progress and ensure they're on the right path.
+Be comprehensive yet super concise in your guidance.`,
+      schemaName: "Coach",
+      schema,
+      prompt,
+    });
+
+    const formattedObject = JSON.stringify(object, null, 2);
+
+    process.stdout.write(formattedObject);
+
+    this.messages.push({
+      role: "assistant",
+      content: formattedObject,
+    });
+  }
+
+  private needsStepByStep(input: string): boolean {
+    const stepKeywords = [
+      "step by step",
+      "how to",
+      "guide me through",
+      "walk me through",
+      "tutorial",
+      "instructions",
+      "step-by-step",
+      "break down",
+      "explain step by step",
+      "show me how",
+      "teach me how",
+      "demonstrate",
+      "procedure",
+      "process",
+    ];
+
+    const lowerInput = input.toLowerCase();
+    return stepKeywords.some((keyword) => lowerInput.includes(keyword));
   }
 
   private async handleCommand(input: string): Promise<boolean> {
@@ -95,7 +146,12 @@ class Chat {
           continue;
         }
 
-        await this.streamResponse(input);
+        // Check if user input indicates need for step-by-step instructions
+        if (this.needsStepByStep(input)) {
+          await this.stepsResponse(input);
+        } else {
+          await this.streamResponse(input);
+        }
       } catch (error) {
         console.error(`Error: ${error}`);
         break;

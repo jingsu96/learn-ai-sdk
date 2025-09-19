@@ -3,10 +3,12 @@ import { google } from "@ai-sdk/google";
 import {
   streamText,
   streamObject,
+  generateText,
   generateObject,
   type ModelMessage,
 } from "ai";
 import * as readline from "readline";
+import isImage from "is-image";
 import { schema } from "./schema";
 
 type OutputFormat = "auto" | "sentiment" | "structured";
@@ -19,14 +21,7 @@ class Chat {
   private rl: readline.Interface;
   private outputFormat: OutputFormat;
 
-  private messages: ModelMessage[] = [
-    /** System prompt can also be put it as the first chat in the history */
-    {
-      role: "system",
-      content:
-        "You are a helpful assistant. Please answer the user's questions concisely and helpfully.",
-    },
-  ];
+  private messages: ModelMessage[] = [];
 
   constructor(outputFormat: OutputFormat = "auto") {
     this.rl = readline.createInterface({
@@ -43,6 +38,8 @@ class Chat {
       const { textStream } = streamText({
         model: gemini,
         messages: this.messages,
+        system:
+          "You are a helpful assistant. Please answer the user's questions concisely and helpfully.",
       });
 
       let assistantResponse = "";
@@ -110,6 +107,34 @@ Be comprehensive yet super concise in your guidance.`,
     });
   }
 
+  private async describeImage(url: string): Promise<void> {
+    this.messages.push({
+      role: "user",
+      content: [{ type: "image", image: new URL(url) }],
+    });
+    const { text } = await generateText({
+      model: gemini,
+      system: `You will receive an image. Please describe it concisely, ensuring the output length is within 100 words.`,
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "image",
+              image: new URL(url),
+            },
+          ],
+        },
+      ],
+    });
+
+    console.log(text);
+    this.messages.push({
+      role: "assistant",
+      content: text,
+    });
+  }
+
   private async handleCommand(input: string): Promise<boolean> {
     const command = input.slice(1).toLowerCase();
 
@@ -153,6 +178,11 @@ Be comprehensive yet super concise in your guidance.`,
         if (input.startsWith("/")) {
           const shouldExit = await this.handleCommand(input);
           if (shouldExit) break;
+          continue;
+        }
+
+        if (isImage(input)) {
+          await this.describeImage(input);
           continue;
         }
 
